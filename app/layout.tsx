@@ -43,8 +43,8 @@ export default function RootLayout({
           <span>
             minutas<span className="accent">.</span>
           </span>
-          <p>Conversaciones que se convierten en próximos pasos.</p>
-          <small>Tu espacio de trabajo</small>
+          <p>By Lautaro Tomasetig</p>
+          <small>Conversaciones que se convierten en próximos pasos.</small>
         </footer>
       </body>
     </html>
