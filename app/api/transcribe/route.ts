@@ -1,44 +1,59 @@
-import { MAX_AUDIO_BYTES } from "@/lib/audio";
-import { readBoundedBody } from "@/lib/server/request";
-import { errorResponse, ServiceError, withTimeout } from "@/lib/server/errors";
+import { audioTranscribeRequestSchema } from "@/lib/schemas/audioUpload";
+import {
+  audioPath,
+  deleteAudio,
+  readAudioJson,
+  readPrivateAudio,
+} from "@/lib/server/audioBlob";
+import { errorResponse, withTimeout } from "@/lib/server/errors";
 import { transcribe, validateAudio } from "@/lib/server/transcribe";
 
 export const runtime = "nodejs";
 export const maxDuration = 180;
 export async function POST(request: Request) {
+  let pathname: string | undefined;
+  let cleaned: boolean | undefined;
+  let stage = "reference";
+  const started = performance.now();
+  let response: Response;
   try {
     const result = await withTimeout(
       request.signal,
       150_000,
       async (signal) => {
-        const contentType = request.headers.get("content-type") ?? "";
-        if (!contentType.startsWith("multipart/form-data"))
-          throw new ServiceError(
-            "INVALID_CONTENT_TYPE",
-            "Enviá el audio mediante un formulario de archivo.",
-            415,
-          );
-        const bytes = await readBoundedBody(
-          request,
-          MAX_AUDIO_BYTES + 65_536,
-          signal,
+        const input = audioTranscribeRequestSchema.parse(
+          await readAudioJson(request, signal),
         );
-        let form: FormData;
-        try {
-          form = await new Response(bytes, {
-            headers: { "Content-Type": contentType },
-          }).formData();
-        } catch {
-          throw new ServiceError(
-            "INVALID_FORM",
-            "No pudimos leer el archivo de audio enviado.",
-          );
-        }
-        return transcribe(await validateAudio(form.get("audio")), signal);
+        pathname = audioPath(input.audioRef);
+        if (input.discard) return { success: true as const, discarded: true };
+        stage = "blob_read";
+        const file = await readPrivateAudio(pathname, signal);
+        signal.throwIfAborted();
+        await validateAudio(file);
+        stage = "gemini";
+        return transcribe(file, signal);
       },
     );
-    return Response.json(result, { headers: { "Cache-Control": "no-store" } });
+    response = Response.json(result, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
-    return errorResponse(error);
+    response = errorResponse(error);
+  } finally {
+    // Outside the timeout race: also runs when a provider ignores cancellation.
+    // Gemini receives a buffered File, so deleting Blob cannot disrupt its upload.
+    if (pathname) cleaned = await deleteAudio(pathname);
+    console.info("[audio] transcribe", {
+      stage,
+      durationMs: Math.round(performance.now() - started),
+      blobDeleted: cleaned ?? null,
+    });
   }
+  response.headers.set(
+    "Server-Timing",
+    `transcribe;dur=${Math.round(performance.now() - started)}`,
+  );
+  if (cleaned !== undefined)
+    response.headers.set("X-Audio-Blob-Deleted", String(cleaned));
+  return response;
 }

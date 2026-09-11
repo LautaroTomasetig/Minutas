@@ -1,5 +1,6 @@
+import { audioUploadResponseSchema } from "@/lib/schemas/audioUpload";
 import { request, requestPdf } from "./client";
-import { audioExtension, MAX_AUDIO_BYTES } from "@/lib/audio";
+import { MAX_AUDIO_BYTES } from "@/lib/audio";
 import { ApiError } from "./client";
 import {
   transcribeResponseSchema,
@@ -9,19 +10,85 @@ import { minutesResponseSchema } from "@/lib/schemas/minute";
 import type { Meeting } from "@/lib/schemas/meeting";
 import type { Minute } from "@/lib/schemas/minute";
 
-export function transcribeAudio(audio: Blob, signal: AbortSignal) {
+export async function transcribeAudio(
+  audio: Blob,
+  signal: AbortSignal,
+  onStage?: (stage: "uploading" | "transcribing") => void,
+) {
   if (!audio.size || audio.size > MAX_AUDIO_BYTES)
     throw new ApiError(
       "INVALID_AUDIO",
       "El audio debe tener contenido y pesar hasta 24 MB. Podés descargarlo para conservarlo.",
     );
-  const body = new FormData();
-  body.append("audio", audio, `reunion.${audioExtension(audio.type)}`);
-  return request("/api/transcribe", transcribeResponseSchema, {
-    method: "POST",
-    body,
-    signal,
-  });
+  const mimeType = audio.type.split(";")[0].toLowerCase();
+  onStage?.("uploading");
+  const authorization = await request(
+    "/api/audio/upload",
+    audioUploadResponseSchema,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mimeType, size: audio.size }),
+      signal,
+    },
+  );
+  let completed = false;
+  try {
+    const uploadSignal = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(180_000),
+    ]);
+    const uploaded = await fetch(authorization.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": mimeType },
+      body: audio,
+      signal: uploadSignal,
+      credentials: "omit",
+      redirect: "error",
+    });
+    if (!uploaded.ok)
+      throw new ApiError(
+        "UPLOAD_FAILED",
+        "No pudimos subir el audio temporal. Podés reintentar.",
+        uploaded.status,
+      );
+    signal.throwIfAborted();
+    onStage?.("transcribing");
+    const result = await request("/api/transcribe", transcribeResponseSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audioRef: authorization.audioRef }),
+      signal,
+    });
+    completed = true;
+    return result;
+  } catch (error) {
+    if (signal.aborted)
+      throw new ApiError(
+        "CANCELLED",
+        "Procesamiento cancelado. Tus datos siguen disponibles.",
+      );
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(
+      "UPLOAD_FAILED",
+      "No pudimos completar la subida del audio. Revisá tu conexión y volvé a intentar.",
+    );
+  } finally {
+    if (!completed) {
+      // Best effort after cancellation/network failure, using the same endpoint.
+      // No orphan endpoint or periodic infrastructure.
+      await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audioRef: authorization.audioRef,
+          discard: true,
+        }),
+        signal: AbortSignal.timeout(5000),
+        keepalive: true,
+      }).catch(() => {});
+    }
+  }
 }
 export function translateTranscript(transcript: string, signal: AbortSignal) {
   return request("/api/translate", translateResponseSchema, {

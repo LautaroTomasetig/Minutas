@@ -5,7 +5,8 @@ import {
   LoaderCircle,
   Sparkles,
 } from "lucide-react";
-export type ProcessingStage = "transcribing" | "translating" | "generating";
+export type ProcessingStage =
+  "uploading" | "transcribing" | "translating" | "generating";
 export function ProcessingStatus({
   stage,
   onCancel,
@@ -14,6 +15,7 @@ export function ProcessingStatus({
   onCancel: () => void;
 }) {
   const titles = {
+    uploading: "Subiendo audio…",
     transcribing: "Tu conversación está tomando forma.",
     translating: "La misma conversación, en español.",
     generating: "Ordenando las ideas de tu equipo.",
@@ -26,9 +28,15 @@ export function ProcessingStatus({
       <h2>{titles[stage]}</h2>
       <p>Podés dejar esta pestaña abierta mientras procesamos la reunión.</p>
       <ol className="processing-steps">
-        <li className={stage === "transcribing" ? "active" : "done"}>
+        <li
+          className={
+            stage === "transcribing" || stage === "uploading"
+              ? "active"
+              : "done"
+          }
+        >
           <span>
-            {stage === "transcribing" ? (
+            {stage === "transcribing" || stage === "uploading" ? (
               <FileText size={18} />
             ) : (
               <Check size={18} />
@@ -36,9 +44,11 @@ export function ProcessingStatus({
           </span>
           <div>
             <strong>
-              {stage === "transcribing"
-                ? "Enviando audio y transcribiendo…"
-                : "Transcripción disponible"}
+              {stage === "uploading"
+                ? "Subiendo audio…"
+                : stage === "transcribing"
+                  ? "Transcribiendo…"
+                  : "Transcripción disponible"}
             </strong>
             <p>Conservamos la conversación en su idioma original.</p>
           </div>
@@ -60,7 +70,7 @@ export function ProcessingStatus({
               <Sparkles size={18} />
             </span>
             <div>
-              <strong>Analizando y generando minuta…</strong>
+              <strong>Generando minuta…</strong>
               <p>Extrayendo temas, decisiones y próximos pasos.</p>
             </div>
           </li>

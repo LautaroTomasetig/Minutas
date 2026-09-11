@@ -77,9 +77,13 @@ export function MeetingWorkspace({
     const current = new AbortController();
     controller.current = current;
     setError(null);
-    setProcessing("transcribing");
+    setProcessing("uploading");
     try {
-      const transcript = await transcribeAudio(recorder.blob, current.signal);
+      const transcript = await transcribeAudio(
+        recorder.blob,
+        current.signal,
+        setProcessing,
+      );
       setTranscription(transcript);
       if (meeting) {
         setProcessing("generating");

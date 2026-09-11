@@ -69,11 +69,45 @@ try {
   await (await audioDownload).saveAs(path.join(output, "recorded-audio.webm"));
   assert((await fs.stat(path.join(output, "recorded-audio.webm"))).size > 500);
 
-  // Simulate only the paid AI results. Recording, editing and PDF use real code.
+  // Simulate Blob and AI responses. Recording, editing and PDF use real code.
   const transcript =
     "Luis: El prototipo está aprobado. Voy a compartirlo con el equipo. Ana: Queda pendiente definir la fecha de la próxima entrega.";
-  await page.route("**/api/transcribe", async (route) => {
+  const audioRef = { key: "a".repeat(64), extension: "webm" };
+  await page.route("**/api/audio/upload", async (route) => {
+    const body = route.request().postDataJSON();
+    assert(body.size > 500);
+    assert.equal(body.mimeType, "audio/webm");
+    await route.fulfill({
+      json: {
+        success: true,
+        audioRef,
+        uploadUrl: "https://vercel.com/api/blob/?smoke=1",
+      },
+    });
+  });
+  await page.route("https://vercel.com/api/blob/**", async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await route.fulfill({
+        status: 204,
+        headers: {
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "PUT",
+          "access-control-allow-headers": "content-type",
+        },
+      });
+      return;
+    }
+    assert.equal(route.request().method(), "PUT");
     assert(route.request().postDataBuffer().length > 500);
+    await route.fulfill({
+      status: 200,
+      body: "",
+      headers: { "access-control-allow-origin": "*" },
+    });
+  });
+  await page.route("**/api/transcribe", async (route) => {
+    assert(route.request().postDataBuffer().length < 4096);
+    assert.deepEqual(route.request().postDataJSON(), { audioRef });
     await route.fulfill({
       json: { success: true, transcript, detectedLanguage: "es" },
     });
@@ -206,10 +240,10 @@ try {
   const invalidAudio = await context.request.post(`${baseURL}/api/transcribe`, {
     multipart: {},
   });
-  assert.equal(invalidAudio.status(), 400);
+  assert.equal(invalidAudio.status(), 415);
   assert.deepEqual(errors, []);
   console.log(
-    "Browser smoke passed: native recording with synthetic microphone, pause/resume, confirmation, download, simulated AI, editing, deletion, numbering, real PDF export, responsive views, invalid APIs. Screenshots and files in test-results/.",
+    "Browser smoke passed: native recording with synthetic microphone, pause/resume, confirmation, download, direct upload with simulated Blob and AI, editing, deletion, numbering, real PDF export, responsive views, invalid APIs. Screenshots and files in test-results/.",
   );
 } finally {
   await browser.close();
