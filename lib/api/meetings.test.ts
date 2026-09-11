@@ -1,61 +1,67 @@
 // @vitest-environment node
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+const sdk = vi.hoisted(() => ({ uploadPresigned: vi.fn() }));
+vi.mock("@vercel/blob/client", () => sdk);
 import { transcribeAudio } from "./meetings";
 const audioRef = { key: "a".repeat(64), extension: "webm" };
-const uploadUrl = "https://vercel.com/api/blob/?test=1";
+const pathname = "meeting-audio/" + "b".repeat(64) + ".webm";
+const prepared = () => Response.json({ success: true, audioRef, pathname });
+beforeEach(() => {
+  sdk.uploadPresigned.mockReset().mockResolvedValue({ pathname });
+});
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
-it("sends a 5.5 MB Blob only to storage and a small JSON reference to transcribe", async () => {
-  const audio = new Blob([new Uint8Array(5_500_000)], {
+it("delegates a 5.5 MB Blob to the SDK and sends only a reference to transcribe", async () => {
+  const audio = new Blob([new Uint8Array(5500000)], {
     type: "audio/webm;codecs=opus",
   });
   const fetchMock = vi
     .fn()
-    .mockResolvedValueOnce(
-      Response.json({ success: true, audioRef, uploadUrl }),
-    )
-    .mockResolvedValueOnce(new Response(null, { status: 200 }))
+    .mockResolvedValueOnce(prepared())
     .mockResolvedValueOnce(
       Response.json({
         success: true,
-        transcript: "Texto real del contrato.",
+        transcript: "Texto del contrato.",
         detectedLanguage: "und",
       }),
     );
   vi.stubGlobal("fetch", fetchMock);
   const stage = vi.fn();
-  const result = await transcribeAudio(
-    audio,
-    new AbortController().signal,
-    stage,
-  );
-  expect(result.transcript).toBeTruthy();
-  expect(fetchMock.mock.calls[0][0]).toBe("/api/audio/upload");
+  expect(
+    (await transcribeAudio(audio, new AbortController().signal, stage))
+      .transcript,
+  ).toBeTruthy();
   expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
     mimeType: "audio/webm",
     size: 5500000,
   });
-  const [destination, put] = fetchMock.mock.calls[1];
-  expect(destination).toBe(uploadUrl);
-  expect(put.method).toBe("PUT");
-  expect(put.body).toBe(audio);
-  expect(put.credentials).toBe("omit");
-  expect(put.headers).toEqual({ "Content-Type": "audio/webm" });
-  const [endpoint, post] = fetchMock.mock.calls[2];
-  expect(endpoint).toBe("/api/transcribe");
-  expect(Buffer.byteLength(post.body)).toBeLessThan(4096);
-  expect(JSON.parse(post.body)).toEqual({ audioRef });
+  expect(sdk.uploadPresigned).toHaveBeenCalledWith(pathname, audio, {
+    access: "private",
+    handleUploadUrl: "/api/audio/upload",
+    clientPayload: JSON.stringify({
+      audioRef,
+      mimeType: "audio/webm",
+      size: 5500000,
+    }),
+    contentType: "audio/webm",
+    multipart: false,
+    abortSignal: expect.any(AbortSignal),
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(fetchMock.mock.calls.every(([, init]) => init.method === "POST")).toBe(
+    true,
+  );
+  expect(fetchMock.mock.calls[1][0]).toBe("/api/transcribe");
+  expect(Buffer.byteLength(fetchMock.mock.calls[1][1].body)).toBe(106);
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ audioRef });
   expect(stage.mock.calls).toEqual([["uploading"], ["transcribing"]]);
 });
-it("requests best-effort discard when transcription fails after upload", async () => {
+it("preserves Gemini errors and attempts discard", async () => {
   const fetchMock = vi
     .fn()
-    .mockResolvedValueOnce(
-      Response.json({ success: true, audioRef, uploadUrl }),
-    )
-    .mockResolvedValueOnce(new Response(null, { status: 200 }))
+    .mockResolvedValueOnce(prepared())
     .mockResolvedValueOnce(
       Response.json(
         {
@@ -73,19 +79,49 @@ it("requests best-effort discard when transcription fails after upload", async (
       new AbortController().signal,
     ),
   ).rejects.toMatchObject({ code: "PROVIDER_LIMIT" });
-  expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({
+  expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({
     audioRef,
     discard: true,
   });
 });
-it("preserves the 180 second client timeout for the transcription request", async () => {
+it("rejects a mismatched SDK result before transcription", async () => {
+  sdk.uploadPresigned.mockResolvedValue({ pathname: "other" });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(prepared())
+    .mockResolvedValueOnce(Response.json({ success: true }));
+  vi.stubGlobal("fetch", fetchMock);
+  await expect(
+    transcribeAudio(
+      new Blob(["audio"], { type: "audio/webm" }),
+      new AbortController().signal,
+    ),
+  ).rejects.toMatchObject({ code: "INVALID_UPLOAD_RESPONSE" });
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+    audioRef,
+    discard: true,
+  });
+});
+it("sanitizes SDK errors without leaking signed URLs", async () => {
+  sdk.uploadPresigned.mockRejectedValue(new Error("private-provider-detail"));
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(prepared())
+    .mockResolvedValueOnce(Response.json({ success: true }));
+  vi.stubGlobal("fetch", fetchMock);
+  await expect(
+    transcribeAudio(
+      new Blob(["audio"], { type: "audio/webm" }),
+      new AbortController().signal,
+    ),
+  ).rejects.toMatchObject({ code: "UPLOAD_FAILED" });
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body).discard).toBe(true);
+});
+it("preserves the 180 second transcription timeout", async () => {
   vi.useFakeTimers();
   const fetchMock = vi
     .fn()
-    .mockResolvedValueOnce(
-      Response.json({ success: true, audioRef, uploadUrl }),
-    )
-    .mockResolvedValueOnce(new Response(null, { status: 200 }))
+    .mockResolvedValueOnce(prepared())
     .mockImplementationOnce(
       (_url, options) =>
         new Promise((_, reject) =>
@@ -104,7 +140,29 @@ it("preserves the 180 second client timeout for the transcription request", asyn
   );
   const rejected = expect(task).rejects.toMatchObject({ code: "TIMEOUT" });
   await vi.advanceTimersByTimeAsync(179999);
-  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
   await vi.advanceTimersByTimeAsync(1);
   await rejected;
+});
+
+it("cancels even when SDK authorization does not settle, without starting transcription", async () => {
+  sdk.uploadPresigned.mockReturnValue(new Promise(() => {}));
+  const controller = new AbortController();
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(prepared())
+    .mockResolvedValueOnce(Response.json({ success: true }));
+  vi.stubGlobal("fetch", fetchMock);
+  const task = transcribeAudio(
+    new Blob(["audio"], { type: "audio/webm" }),
+    controller.signal,
+  );
+  const rejection = expect(task).rejects.toMatchObject({ code: "CANCELLED" });
+  await vi.waitFor(() => expect(sdk.uploadPresigned).toHaveBeenCalledOnce());
+  controller.abort();
+  await rejection;
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+    audioRef,
+    discard: true,
+  });
 });

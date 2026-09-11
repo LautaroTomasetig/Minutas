@@ -26,18 +26,30 @@ export const audioRefSchema = z
   })
   .strict();
 export type AudioRef = z.infer<typeof audioRefSchema>;
-export const audioUploadResponseSchema = z.object({
-  success: z.literal(true),
+export const audioUploadResponseSchema = z
+  .object({
+    success: z.literal(true),
+    audioRef: audioRefSchema,
+    pathname: z
+      .string()
+      .regex(/^meeting-audio\/[a-f0-9]{64}\.(webm|m4a|mp3|wav)$/),
+  })
+  .strict();
+export const audioUploadPayloadSchema = audioUploadSchema.extend({
   audioRef: audioRefSchema,
-  uploadUrl: z.url().refine((value) => {
-    const url = new URL(value);
-    return (
-      url.protocol === "https:" &&
-      url.hostname === "vercel.com" &&
-      url.pathname.startsWith("/api/blob/")
-    );
-  }),
 });
+export const audioUploadEventSchema = z
+  .object({
+    type: z.literal("blob.generate-presigned-url"),
+    payload: z
+      .object({
+        pathname: z.string().max(200),
+        clientPayload: z.string().max(2048),
+        multipart: z.literal(false),
+      })
+      .strict(),
+  })
+  .strict();
 export const audioTranscribeRequestSchema = z
   .object({
     audioRef: audioRefSchema,

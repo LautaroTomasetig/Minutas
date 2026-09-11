@@ -1,3 +1,4 @@
+import { uploadPresigned } from "@vercel/blob/client";
 import { audioUploadResponseSchema } from "@/lib/schemas/audioUpload";
 import { request, requestPdf } from "./client";
 import { MAX_AUDIO_BYTES } from "@/lib/audio";
@@ -33,24 +34,37 @@ export async function transcribeAudio(
     },
   );
   let completed = false;
+  const uploadSignal = AbortSignal.any([signal, AbortSignal.timeout(180_000)]);
   try {
-    const uploadSignal = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(180_000),
-    ]);
-    const uploaded = await fetch(authorization.uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": mimeType },
-      body: audio,
-      signal: uploadSignal,
-      credentials: "omit",
-      redirect: "error",
+    uploadSignal.throwIfAborted();
+    const upload = uploadPresigned(authorization.pathname, audio, {
+      access: "private",
+      handleUploadUrl: "/api/audio/upload",
+      clientPayload: JSON.stringify({
+        audioRef: authorization.audioRef,
+        mimeType,
+        size: audio.size,
+      }),
+      contentType: mimeType,
+      multipart: false,
+      abortSignal: uploadSignal,
     });
-    if (!uploaded.ok)
+    // The SDK's authorization fetch may not forward abortSignal. Bound the
+    // entire SDK operation with the existing deadline without managing its HTTP protocol.
+    let cancelUpload!: () => void;
+    const aborted = new Promise<never>((_, reject) => {
+      cancelUpload = () => reject(uploadSignal.reason);
+      uploadSignal.addEventListener("abort", cancelUpload, { once: true });
+      if (uploadSignal.aborted) cancelUpload();
+    });
+    const uploaded = await Promise.race([upload, aborted]).finally(() =>
+      uploadSignal.removeEventListener("abort", cancelUpload),
+    );
+    uploadSignal.throwIfAborted();
+    if (uploaded.pathname !== authorization.pathname)
       throw new ApiError(
-        "UPLOAD_FAILED",
-        "No pudimos subir el audio temporal. Podés reintentar.",
-        uploaded.status,
+        "INVALID_UPLOAD_RESPONSE",
+        "La referencia del audio subido no coincide con la esperada.",
       );
     signal.throwIfAborted();
     onStage?.("transcribing");
@@ -69,6 +83,11 @@ export async function transcribeAudio(
         "Procesamiento cancelado. Tus datos siguen disponibles.",
       );
     if (error instanceof ApiError) throw error;
+    if (uploadSignal.aborted)
+      throw new ApiError(
+        "TIMEOUT",
+        "La subida tardó demasiado. Podés reintentar con el audio disponible.",
+      );
     throw new ApiError(
       "UPLOAD_FAILED",
       "No pudimos completar la subida del audio. Revisá tu conexión y volvé a intentar.",

@@ -1,12 +1,6 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
-import {
-  BlobNotFoundError,
-  del,
-  get,
-  issueSignedToken,
-  presignUrl,
-} from "@vercel/blob";
+import { BlobNotFoundError, del, get, issueSignedToken } from "@vercel/blob";
 import { MAX_AUDIO_BYTES } from "@/lib/audio";
 import { audioMimeSchema, type AudioRef } from "@/lib/schemas/audioUpload";
 import { ServiceError } from "./errors";
@@ -43,11 +37,7 @@ export function audioPath(ref: AudioRef) {
   const digest = createHash("sha256").update(ref.key).digest("hex");
   return `meeting-audio/${digest}.${ref.extension}`;
 }
-export async function authorizeAudioUpload(
-  mimeType: string,
-  size: number,
-  signal: AbortSignal,
-) {
+export function prepareAudioUpload(mimeType: string) {
   const extension: AudioRef["extension"] = mimeType.includes("webm")
     ? "webm"
     : mimeType.includes("mp4") || mimeType.includes("m4a")
@@ -59,39 +49,41 @@ export async function authorizeAudioUpload(
     key: randomBytes(32).toString("hex"),
     extension,
   };
-  const pathname = audioPath(audioRef);
+  return { success: true as const, audioRef, pathname: audioPath(audioRef) };
+}
+export async function authorizeAudioUpload(
+  pathname: string,
+  payload: { audioRef: AudioRef; mimeType: string; size: number },
+  signal: AbortSignal,
+) {
+  const { audioRef, mimeType, size } = payload;
+  if (pathname !== audioPath(audioRef))
+    throw new ServiceError(
+      "INVALID_AUDIO_REFERENCE",
+      "La referencia no corresponde al audio autorizado.",
+      400,
+    );
   const validUntil = Date.now() + 3 * 60_000;
-  try {
-    // SDK resolves Vercel's injected OIDC/store configuration automatically.
-    const token = await issueSignedToken({
-      pathname,
-      operations: ["put"],
-      allowedContentTypes: [mimeType],
-      maximumSizeInBytes: size,
-      validUntil,
-      abortSignal: signal,
-    });
-    const { presignedUrl } = await presignUrl(token, {
-      operation: "put",
-      pathname,
-      access: "private",
+  // SDK resolves the injected OIDC/store configuration; signing stays in the helper.
+  const token = await issueSignedToken({
+    pathname,
+    operations: ["put"],
+    allowedContentTypes: [mimeType],
+    maximumSizeInBytes: size,
+    validUntil,
+    abortSignal: signal,
+  });
+  return {
+    token,
+    urlOptions: {
       validUntil,
       allowedContentTypes: [mimeType],
       maximumSizeInBytes: size,
       allowOverwrite: false,
       addRandomSuffix: false,
       cacheControlMaxAge: 60,
-    });
-    return { success: true as const, audioRef, uploadUrl: presignedUrl };
-  } catch {
-    signal.throwIfAborted();
-    console.error("[audio] BLOB_UPLOAD_AUTHORIZATION_FAILED");
-    throw new ServiceError(
-      "BLOB_UNAVAILABLE",
-      "No pudimos autorizar la subida de audio. Revisá la conexión del Blob Store.",
-      503,
-    );
-  }
+    },
+  };
 }
 export async function readPrivateAudio(pathname: string, signal: AbortSignal) {
   let result;

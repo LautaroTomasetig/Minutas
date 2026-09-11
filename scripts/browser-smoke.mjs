@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -73,17 +74,47 @@ try {
   const transcript =
     "Luis: El prototipo está aprobado. Voy a compartirlo con el equipo. Ana: Queda pendiente definir la fecha de la próxima entrega.";
   const audioRef = { key: "a".repeat(64), extension: "webm" };
+  const pathname =
+    "meeting-audio/" +
+    createHash("sha256").update(audioRef.key).digest("hex") +
+    ".webm";
+  let sdkAuthorizationSeen = false;
+  let sdkUploadSeen = false;
   await page.route("**/api/audio/upload", async (route) => {
     const body = route.request().postDataJSON();
+    assert(route.request().postDataBuffer().length < 4096);
+    if (body.type === "blob.generate-presigned-url") {
+      assert.equal(body.payload.pathname, pathname);
+      assert.equal(body.payload.multipart, false);
+      const payload = JSON.parse(body.payload.clientPayload);
+      assert.deepEqual(payload.audioRef, audioRef);
+      assert.equal(payload.mimeType, "audio/webm");
+      assert(payload.size > 500);
+      sdkAuthorizationSeen = true;
+      const delegationToken =
+        Buffer.from(
+          JSON.stringify({
+            storeId: "smokefixture",
+            pathname,
+            operations: ["put"],
+            validUntil: Date.now() + 180000,
+          }),
+        ).toString("base64url") + ".synthetic";
+      await route.fulfill({
+        json: {
+          type: body.type,
+          presignedUrlPayload: {
+            delegationToken,
+            signature: "synthetic",
+            params: {},
+          },
+        },
+      });
+      return;
+    }
     assert(body.size > 500);
     assert.equal(body.mimeType, "audio/webm");
-    await route.fulfill({
-      json: {
-        success: true,
-        audioRef,
-        uploadUrl: "https://vercel.com/api/blob/?smoke=1",
-      },
-    });
+    await route.fulfill({ json: { success: true, audioRef, pathname } });
   });
   await page.route("https://vercel.com/api/blob/**", async (route) => {
     if (route.request().method() === "OPTIONS") {
@@ -92,20 +123,40 @@ try {
         headers: {
           "access-control-allow-origin": "*",
           "access-control-allow-methods": "PUT",
-          "access-control-allow-headers": "content-type",
+          "access-control-allow-headers":
+            route.request().headers()["access-control-request-headers"] || "*",
         },
       });
       return;
     }
-    assert.equal(route.request().method(), "PUT");
-    assert(route.request().postDataBuffer().length > 500);
+    assert(sdkAuthorizationSeen);
+    const request = route.request();
+    assert.equal(request.method(), "PUT");
+    assert(request.postDataBuffer().length > 500);
+    assert.equal(new URL(request.url()).searchParams.get("pathname"), pathname);
+    const headers = request.headers();
+    assert.equal(headers["x-vercel-blob-access"], "private");
+    assert.equal(headers["x-content-type"], "audio/webm");
+    assert(headers["x-api-version"]);
+    assert(headers["x-vercel-blob-store-id"]);
+    assert.equal(headers.authorization, undefined);
+    sdkUploadSeen = true;
     await route.fulfill({
       status: 200,
-      body: "",
+      json: {
+        pathname,
+        url: "https://smokefixture.private.blob.vercel-storage.com/" + pathname,
+        downloadUrl:
+          "https://smokefixture.private.blob.vercel-storage.com/" + pathname,
+        contentType: "audio/webm",
+        contentDisposition: "attachment",
+        etag: "fixture",
+      },
       headers: { "access-control-allow-origin": "*" },
     });
   });
   await page.route("**/api/transcribe", async (route) => {
+    assert(sdkUploadSeen);
     assert(route.request().postDataBuffer().length < 4096);
     assert.deepEqual(route.request().postDataJSON(), { audioRef });
     await route.fulfill({
