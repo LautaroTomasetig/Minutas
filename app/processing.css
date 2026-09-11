@@ -1,0 +1,121 @@
+.processing-card {
+  padding: 38px;
+  text-align: center;
+}
+.processing-icon {
+  width: 68px;
+  height: 68px;
+  background: var(--accent-soft);
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  margin: 0 auto 24px;
+}
+.processing-card h2 {
+  font-size: 25px;
+  max-width: 350px;
+  margin: auto;
+}
+.processing-card > p {
+  font-size: 12px;
+  margin: 14px auto;
+  max-width: 330px;
+}
+.processing-steps {
+  list-style: none;
+  padding: 22px 0;
+  margin: 10px auto 20px;
+  text-align: left;
+  max-width: 350px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.processing-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.processing-steps li > span {
+  background: #f1f4f7;
+  border-radius: 9px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.processing-steps strong {
+  font-size: 13px;
+}
+.processing-steps p {
+  font-size: 11px;
+  margin-top: 5px;
+}
+.processing-steps .active > span {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.processing-steps .done > span {
+  background: #edf5f1;
+  color: var(--green);
+}
+.processing-card .processing-note {
+  font-size: 10px;
+  margin-top: 18px;
+}
+.transcript-card {
+  padding: 28px;
+}
+.transcript-card .section-heading p {
+  font-size: 11px;
+}
+.transcript-text {
+  font-size: 13px;
+  line-height: 1.9;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 480px;
+  overflow: auto;
+  padding: 16px 0;
+}
+.transcript-card details {
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+}
+.transcript-card summary,
+.audio-details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.transcript-card .actions {
+  margin-top: 15px;
+}
+.audio-details {
+  margin-top: 20px;
+}
+.audio-details > summary {
+  color: var(--muted);
+  padding: 10px;
+}
+.audio-details .recorder-card {
+  margin-top: 10px;
+}
+.generate-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+.processing-card + .session-note {
+  margin-top: 20px;
+}
+@media (max-width: 720px) {
+  .processing-card {
+    padding: 30px 20px;
+  }
+  .transcript-card {
+    padding: 22px 18px;
+  }
+}

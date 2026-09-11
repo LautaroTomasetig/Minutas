@@ -1,0 +1,167 @@
+.recorder-card {
+  padding: 35px;
+  text-align: center;
+}
+.recording-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #edf4f1;
+  color: #28745d;
+  border-radius: 30px;
+  padding: 6px 13px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 21px;
+}
+.recording-badge.recording {
+  background: #fff0ea;
+  color: #c14c31;
+}
+.recording-badge.paused {
+  background: #fff7e6;
+  color: #8b682b;
+}
+.recording-badge.error {
+  background: #fff0ee;
+  color: #ad382e;
+}
+.recording-dot {
+  width: 7px;
+  height: 7px;
+  background: currentColor;
+  border-radius: 50%;
+}
+.recording .recording-dot {
+  animation: blink 1.6s ease-in-out infinite;
+}
+.recorder-card h2 {
+  font-size: 22px;
+  overflow-wrap: anywhere;
+}
+.mic-orbit {
+  display: grid;
+  place-items: center;
+  width: 102px;
+  height: 102px;
+  border-radius: 50%;
+  background: #f0f3f6;
+  color: #71879a;
+  margin: 30px auto 24px;
+  border: 12px solid #f8f9fb;
+}
+.mic-orbit.recording {
+  background: #fff0e8;
+  color: var(--accent);
+  border-color: #fff9f5;
+  animation: orbit 2.4s ease-in-out infinite;
+}
+.timer {
+  font-size: 53px;
+  letter-spacing: 2px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.recorder-hint {
+  font-size: 12px;
+  max-width: 330px;
+  margin: 16px auto 27px;
+}
+.recorder-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.recorder-footnote {
+  border-top: 1px solid var(--line);
+  padding-top: 19px;
+  margin-top: 30px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.session-note {
+  font-size: 11px;
+  margin: 15px 5px;
+}
+.confirm-dialog {
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  max-width: 450px;
+  width: calc(100% - 36px);
+  color: var(--ink);
+  box-shadow: 0 20px 70px #19293630;
+}
+.confirm-dialog::backdrop {
+  background: #16233266;
+  backdrop-filter: blur(3px);
+}
+.confirm-dialog h2 {
+  font-size: 23px;
+}
+.confirm-dialog p {
+  font-size: 14px;
+  margin: 15px 0 25px;
+}
+.confirm-dialog .actions {
+  justify-content: flex-end;
+}
+.audio-review {
+  margin-top: 20px;
+}
+.audio-review audio {
+  width: 100%;
+  height: 42px;
+  margin-bottom: 19px;
+}
+.audio-review .actions {
+  justify-content: center;
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+.recording-badge.requesting {
+  background: #eff3f8;
+  color: #506f8a;
+}
+.notice {
+  text-align: left;
+}
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes orbit {
+  50% {
+    box-shadow: 0 0 0 8px #fff8f2;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 720px) {
+  .recorder-card {
+    padding: 28px 18px;
+  }
+  .timer {
+    font-size: 46px;
+  }
+  .recorder-controls .button {
+    flex: 1;
+  }
+  .recorder-footnote {
+    font-size: 9px;
+  }
+  .confirm-dialog .actions .button {
+    flex: 1;
+  }
+}
