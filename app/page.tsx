@@ -22,7 +22,7 @@ export default function Home() {
           <span className="serif">Próximos pasos claros.</span>
         </h1>
         <p className="hero-description">
-          Dale lugar a las ideas. Grabá tu reunión y transformala
+      Grabá tu reunión y transformala
           <br className="desktop-break" /> en una minuta que tu equipo pueda
           poner en acción.
         </p>
@@ -37,7 +37,7 @@ export default function Home() {
           </div>
           <div>
             <p className="eyebrow">EMPEZÁ POR UNA CONVERSACIÓN</p>
-            <h2>Nueva reunión</h2>
+            <h2>Grabá tu reunión</h2>
             <p>
               Un título, tu micrófono y las ideas de tu equipo.
               <br />
@@ -108,7 +108,7 @@ export default function Home() {
             {
               icon: PencilLine,
               n: "03",
-              title: "Hacela tuya",
+              title: "Editá",
               text: "Revisá cada punto, ajustá los detalles y exportá un PDF listo para tu equipo.",
             },
           ].map(({ icon: Icon, n, title, text }) => (

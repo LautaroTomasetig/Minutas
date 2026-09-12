@@ -500,8 +500,8 @@ textarea::placeholder {
 input:focus,
 textarea:focus,
 select:focus {
-  border-color: #607e99;
-  outline: 2px solid #607e9920;
+  border-color: #ee6d0410;
+  outline: 2px solid #f5aa6c91;
   outline-offset: 1px;
 }
 input[aria-invalid="true"],
