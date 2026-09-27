@@ -172,6 +172,34 @@ describe("official presigned upload", () => {
     vi.stubEnv("BLOB_WEBHOOK_PUBLIC_KEY", "");
     const response = await POST(req(event(await prepare())));
     expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      error: {
+        code: "BLOB_NOT_CONFIGURED",
+        message: expect.stringContaining("BLOB_WEBHOOK_PUBLIC_KEY"),
+      },
+    });
+    expect(console.error).toHaveBeenCalledWith(
+      "[audio] BLOB_NOT_CONFIGURED",
+      "MISSING_WEBHOOK_PUBLIC_KEY",
+    );
     expect(blob.issueSignedToken).not.toHaveBeenCalled();
+  });
+  it("identifies missing SDK credentials without requiring a static token", async () => {
+    blob.issueSignedToken.mockRejectedValue(
+      new Error(
+        "Vercel Blob: No blob credentials found. Pass a `token` option, set `BLOB_READ_WRITE_TOKEN`, or use `oidcToken` (or `VERCEL_OIDC_TOKEN`) with `storeId` or `BLOB_STORE_ID`.",
+      ),
+    );
+    const response = await POST(req(event(await prepare())));
+    const body = await response.json();
+    expect(response.status).toBe(503);
+    expect(body.error.code).toBe("BLOB_NOT_CONFIGURED");
+    expect(body.error.message).toContain("BLOB_STORE_ID");
+    expect(body.error.message).toContain("VERCEL_OIDC_TOKEN");
+    expect(body.error.message).not.toContain("BLOB_READ_WRITE_TOKEN");
+    expect(console.error).toHaveBeenCalledWith(
+      "[audio] BLOB_NOT_CONFIGURED",
+      "MISSING_BLOB_CREDENTIALS",
+    );
   });
 });

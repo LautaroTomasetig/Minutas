@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Check,
   Mic,
+  Upload,
   FileText,
   Download,
   AlertCircle,
@@ -14,6 +15,7 @@ import type { Meeting } from "@/lib/schemas/meeting";
 import type { Transcription } from "@/lib/schemas/api";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { AudioRecorder } from "./AudioRecorder";
+import { AudioFileInput } from "./AudioFileInput";
 import { ProcessingStatus, type ProcessingStage } from "./ProcessingStatus";
 import { TranscriptPanel } from "./TranscriptPanel";
 import {
@@ -29,6 +31,10 @@ export function MeetingWorkspace({
 }: {
   aiConfigured?: boolean;
 }) {
+  const [audioSource, setAudioSource] = useState<"microphone" | "file">(
+    "microphone",
+  );
+  const [audioFile, setAudioFile] = useState<File | null>(null);
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [transcription, setTranscription] = useState<Transcription | null>(
     null,
@@ -39,6 +45,12 @@ export function MeetingWorkspace({
   const [error, setError] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
   const recorder = useAudioRecorder();
+  const recordingBusy = [
+    "requesting",
+    "recording",
+    "paused",
+    "stopping",
+  ].includes(recorder.status);
   useEffect(
     () => () => {
       controller.current?.abort();
@@ -73,14 +85,15 @@ export function MeetingWorkspace({
     };
   }, [meeting]);
   async function processAudio() {
-    if (!recorder.blob || controller.current) return;
+    const audio = audioSource === "file" ? audioFile : recorder.blob;
+    if (!audio || controller.current) return;
     const current = new AbortController();
     controller.current = current;
     setError(null);
     setProcessing("uploading");
     try {
       const transcript = await transcribeAudio(
-        recorder.blob,
+        audio,
         current.signal,
         setProcessing,
       );
@@ -202,6 +215,51 @@ export function MeetingWorkspace({
             />
           )}
           <div hidden={processing !== null}>
+            {!transcription && (
+              <div className="form-bottom">
+                <div
+                  className="actions"
+                  role="group"
+                  aria-label="Origen del audio"
+                >
+                  <button
+                    type="button"
+                    className={
+                      audioSource === "microphone"
+                        ? "button primary"
+                        : "button secondary"
+                    }
+                    aria-pressed={audioSource === "microphone"}
+                    disabled={recordingBusy}
+                    onClick={() => {
+                      setAudioSource("microphone");
+                      setError(null);
+                    }}
+                  >
+                    <Mic size={17} />
+                    Grabar con micrófono
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      audioSource === "file"
+                        ? "button primary"
+                        : "button secondary"
+                    }
+                    aria-pressed={audioSource === "file"}
+                    disabled={recordingBusy}
+                    onClick={() => {
+                      setAudioSource("file");
+                      setError(null);
+                    }}
+                  >
+                    <Upload size={17} />
+                    Subir audio
+                  </button>
+                </div>
+              </div>
+            )}
+
             {meeting ? (
               <>
                 {minute && (
@@ -234,12 +292,25 @@ export function MeetingWorkspace({
                     )}
                     <details className="audio-details">
                       <summary>Escuchar o descargar el audio</summary>
-                      <AudioRecorder
-                        recorder={recorder}
-                        title={meeting.title}
-                      />
+                      {audioSource === "file" ? (
+                        <AudioFileInput file={audioFile} />
+                      ) : (
+                        <AudioRecorder
+                          recorder={recorder}
+                          title={meeting.title}
+                        />
+                      )}
                     </details>
                   </>
+                ) : audioSource === "file" ? (
+                  <AudioFileInput
+                    file={audioFile}
+                    onSelect={(file) => {
+                      setAudioFile(file);
+                      setError(null);
+                    }}
+                    onProcess={processAudio}
+                  />
                 ) : (
                   <AudioRecorder
                     recorder={recorder}
@@ -254,9 +325,13 @@ export function MeetingWorkspace({
               </>
             ) : (
               <MeetingForm
+                requestMicrophone={audioSource === "microphone"}
+                submitLabel={
+                  audioSource === "file" ? "Continuar con audio" : undefined
+                }
                 onSubmit={(value) => {
                   setMeeting(value);
-                  void recorder.start();
+                  if (audioSource === "microphone") void recorder.start();
                 }}
               />
             )}

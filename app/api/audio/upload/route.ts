@@ -38,6 +38,35 @@ export async function POST(request: Request) {
           } catch (error) {
             signal.throwIfAborted();
             if (error instanceof ServiceError) throw error;
+            // Only recognize fixed SDK configuration errors; never expose provider bodies.
+            const configurationError =
+              error instanceof Error
+                ? error.message === "Vercel Blob: Missing webhook public key"
+                  ? {
+                      reason: "MISSING_WEBHOOK_PUBLIC_KEY",
+                      message:
+                        "Falta BLOB_WEBHOOK_PUBLIC_KEY en el servidor. Sincronizá la conexión de Vercel Blob para este entorno y reiniciá la aplicación.",
+                    }
+                  : error.message ===
+                      "Vercel Blob: No blob credentials found. Pass a `token` option, set `BLOB_READ_WRITE_TOKEN`, or use `oidcToken` (or `VERCEL_OIDC_TOKEN`) with `storeId` or `BLOB_STORE_ID`."
+                    ? {
+                        reason: "MISSING_BLOB_CREDENTIALS",
+                        message:
+                          "Falta la autenticación de Vercel Blob en el servidor. Para la conexión OIDC, sincronizá BLOB_STORE_ID y VERCEL_OIDC_TOKEN para este entorno y reiniciá la aplicación.",
+                      }
+                    : null
+                : null;
+            if (configurationError) {
+              console.error(
+                "[audio] BLOB_NOT_CONFIGURED",
+                configurationError.reason,
+              );
+              throw new ServiceError(
+                "BLOB_NOT_CONFIGURED",
+                configurationError.message,
+                503,
+              );
+            }
             console.error("[audio] BLOB_UPLOAD_AUTHORIZATION_FAILED");
             throw new ServiceError(
               "BLOB_UNAVAILABLE",

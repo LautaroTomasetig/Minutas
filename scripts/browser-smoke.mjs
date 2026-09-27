@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const baseURL = process.env.SMOKE_BASE_URL || "http://127.0.0.1:3000";
+const fileMode = process.env.SMOKE_AUDIO_SOURCE === "file";
 const output = path.resolve("test-results");
 await fs.mkdir(output, { recursive: true });
 const browser = await chromium.launch({
@@ -29,6 +30,18 @@ try {
   });
   const page = await context.newPage();
   page.on("pageerror", (error) => errors.push(error.message));
+  if (fileMode) {
+    await page.addInitScript(() => {
+      window.microphoneRequests = 0;
+      const original = navigator.mediaDevices.getUserMedia.bind(
+        navigator.mediaDevices,
+      );
+      navigator.mediaDevices.getUserMedia = (...args) => {
+        window.microphoneRequests++;
+        return original(...args);
+      };
+    });
+  }
   await page.goto(baseURL);
   await page.screenshot({
     path: path.join(output, "home-desktop.png"),
@@ -37,6 +50,10 @@ try {
   await page
     .getByRole("link", { name: /EMPEZÁ POR UNA CONVERSACIÓN/i })
     .click();
+  if (fileMode)
+    await page
+      .getByRole("button", { name: "Subir audio", exact: true })
+      .click();
   await page
     .getByLabel(/Título de la reunión/i)
     .fill("Seguimiento del proyecto");
@@ -49,26 +66,59 @@ try {
     path: path.join(output, "form-desktop.png"),
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Iniciar reunión" }).click();
-  await page.getByText("Grabando", { exact: true }).waitFor();
-  await page.waitForTimeout(1400);
-  await page.getByRole("button", { name: "Pausar", exact: true }).click();
-  await page.getByText("En pausa", { exact: true }).waitFor();
-  await page.screenshot({
-    path: path.join(output, "recording-desktop.png"),
-    fullPage: true,
-  });
-  await page.getByRole("button", { name: "Reanudar", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Finalizar reunión", exact: true })
-    .click();
-  await page.getByRole("dialog").waitFor();
-  await page.getByRole("button", { name: "Sí, finalizar" }).click();
-  await page.getByText("Grabación finalizada", { exact: true }).waitFor();
-  const audioDownload = page.waitForEvent("download");
-  await page.getByRole("link", { name: "Descargar audio" }).click();
-  await (await audioDownload).saveAs(path.join(output, "recorded-audio.webm"));
-  assert((await fs.stat(path.join(output, "recorded-audio.webm"))).size > 500);
+  if (fileMode) {
+    await page.getByRole("button", { name: "Continuar con audio" }).click();
+    await page
+      .getByLabel("Seleccionar archivo de audio")
+      .setInputFiles(path.join(output, "recorded-audio.webm"));
+    await page
+      .getByRole("heading", { name: "recorded-audio.webm", exact: true })
+      .waitFor();
+    assert.equal(await page.evaluate(() => window.microphoneRequests), 0);
+    await page.screenshot({
+      path: path.join(output, "uploaded-audio-desktop.png"),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    );
+    await page.screenshot({
+      path: path.join(output, "uploaded-audio-mobile.png"),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 1440, height: 1100 });
+  } else {
+    await page.getByRole("button", { name: "Iniciar reunión" }).click();
+    await page.getByText("Grabando", { exact: true }).waitFor();
+    await page.waitForTimeout(1400);
+    await page.getByRole("button", { name: "Pausar", exact: true }).click();
+    await page.getByText("En pausa", { exact: true }).waitFor();
+    await page.screenshot({
+      path: path.join(output, "recording-desktop.png"),
+      fullPage: true,
+    });
+    await page.getByRole("button", { name: "Reanudar", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Finalizar reunión", exact: true })
+      .click();
+    await page.getByRole("dialog").waitFor();
+    await page.getByRole("button", { name: "Sí, finalizar" }).click();
+    await page.getByText("Grabación finalizada", { exact: true }).waitFor();
+    const audioDownload = page.waitForEvent("download");
+    await page.getByRole("link", { name: "Descargar audio" }).click();
+    await (
+      await audioDownload
+    ).saveAs(path.join(output, "recorded-audio.webm"));
+    assert(
+      (await fs.stat(path.join(output, "recorded-audio.webm"))).size > 500,
+    );
+  }
+  const expectedAudio = await fs.readFile(
+    path.join(output, "recorded-audio.webm"),
+  );
 
   // Simulate Blob and AI responses. Recording, editing and PDF use real code.
   const transcript =
@@ -78,6 +128,7 @@ try {
     "meeting-audio/" +
     createHash("sha256").update(audioRef.key).digest("hex") +
     ".webm";
+  let uploadMime;
   let sdkAuthorizationSeen = false;
   let sdkUploadSeen = false;
   await page.route("**/api/audio/upload", async (route) => {
@@ -88,7 +139,7 @@ try {
       assert.equal(body.payload.multipart, false);
       const payload = JSON.parse(body.payload.clientPayload);
       assert.deepEqual(payload.audioRef, audioRef);
-      assert.equal(payload.mimeType, "audio/webm");
+      assert.equal(payload.mimeType, uploadMime);
       assert(payload.size > 500);
       sdkAuthorizationSeen = true;
       const delegationToken =
@@ -113,7 +164,8 @@ try {
       return;
     }
     assert(body.size > 500);
-    assert.equal(body.mimeType, "audio/webm");
+    assert(["audio/webm", "video/webm"].includes(body.mimeType));
+    uploadMime = body.mimeType;
     await route.fulfill({ json: { success: true, audioRef, pathname } });
   });
   await page.route("https://vercel.com/api/blob/**", async (route) => {
@@ -132,11 +184,11 @@ try {
     assert(sdkAuthorizationSeen);
     const request = route.request();
     assert.equal(request.method(), "PUT");
-    assert(request.postDataBuffer().length > 500);
+    assert.deepEqual(request.postDataBuffer(), expectedAudio);
     assert.equal(new URL(request.url()).searchParams.get("pathname"), pathname);
     const headers = request.headers();
     assert.equal(headers["x-vercel-blob-access"], "private");
-    assert.equal(headers["x-content-type"], "audio/webm");
+    assert.equal(headers["x-content-type"], uploadMime);
     assert(headers["x-api-version"]);
     assert(headers["x-vercel-blob-store-id"]);
     assert.equal(headers.authorization, undefined);
@@ -148,7 +200,7 @@ try {
         url: "https://smokefixture.private.blob.vercel-storage.com/" + pathname,
         downloadUrl:
           "https://smokefixture.private.blob.vercel-storage.com/" + pathname,
-        contentType: "audio/webm",
+        contentType: uploadMime,
         contentDisposition: "attachment",
         etag: "fixture",
       },
@@ -292,9 +344,11 @@ try {
     multipart: {},
   });
   assert.equal(invalidAudio.status(), 415);
+  if (fileMode)
+    assert.equal(await page.evaluate(() => window.microphoneRequests), 0);
   assert.deepEqual(errors, []);
   console.log(
-    "Browser smoke passed: native recording with synthetic microphone, pause/resume, confirmation, download, direct upload with simulated Blob and AI, editing, deletion, numbering, real PDF export, responsive views, invalid APIs. Screenshots and files in test-results/.",
+    `Browser smoke passed (${fileMode ? "selected audio file, no microphone access" : "native recording, pause/resume, confirmation, download"}): exact audio bytes uploaded with simulated Blob and AI, editing, deletion, numbering, real PDF export, responsive views, invalid APIs. Screenshots and files in test-results/.`,
   );
 } finally {
   await browser.close();

@@ -16,11 +16,13 @@ export function MeetingForm({
   initialValue,
   submitLabel = "Iniciar reunión",
   editing = false,
+  requestMicrophone = true,
 }: {
   onSubmit: (meeting: Meeting) => void;
   initialValue?: Meeting;
   submitLabel?: string;
   editing?: boolean;
+  requestMicrophone?: boolean;
 }) {
   const [value, setValue] = useState<Meeting>(initialValue ?? newMeeting);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -205,6 +207,8 @@ export function MeetingForm({
         <p>
           {editing ? (
             "Los cambios se aplican a la minuta de esta sesión."
+          ) : !requestMicrophone ? (
+            "Podés seleccionar un archivo de audio en el siguiente paso."
           ) : (
             <>
               <Mic size={16} />
