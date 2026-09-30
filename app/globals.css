@@ -435,7 +435,7 @@ nav a:hover {
   align-items: start;
 }
 .card {
-  background: #1F2C39;
+  background: var(--paper);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: 0 2px 6px #243b5003;
