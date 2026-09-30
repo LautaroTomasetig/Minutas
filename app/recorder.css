@@ -165,3 +165,77 @@
     flex: 1;
   }
 }
+
+/* Brand palette for the microphone card; layout and file input stay unchanged. */
+.recorder-card:has(> .recording-badge) {
+  background: #1f2c39;
+  border-color: #f8f9fb26;
+  color: #f8f9fb;
+}
+.recorder-card > .recording-badge {
+  background: #f8f9fb0d;
+  color: #f8f9fb;
+  box-shadow: inset 0 0 0 1px #f8f9fb26;
+}
+.recorder-card > .recording-badge.recording,
+.recorder-card > .recording-badge.error {
+  background: #d8573626;
+  box-shadow: inset 0 0 0 1px #d8573680;
+}
+.recorder-card > .recording-badge .recording-dot {
+  background: #d85736;
+}
+.recorder-card > .recording-badge.paused .recording-dot {
+  background: #f8f9fb;
+}
+.recorder-card:has(> .recording-badge) > h2,
+.recorder-card > .timer {
+  color: #f8f9fb;
+}
+.recorder-card > .mic-orbit {
+  background: #f8f9fb0d;
+  border-color: #f8f9fb08;
+  color: #d85736;
+}
+.recorder-card > .mic-orbit.recording {
+  background: #d857361f;
+  border-color: #d857360d;
+  animation-name: recorder-brand-orbit;
+}
+.recorder-card:has(> .recording-badge) > .recorder-hint,
+.recorder-card > .recorder-footnote {
+  color: #f8f9fbba;
+}
+.recorder-card > .recorder-footnote {
+  border-color: #f8f9fb26;
+}
+.recorder-card > .recorder-controls .secondary,
+.recorder-card:has(> .recording-badge) > .audio-review .secondary {
+  background: #f8f9fb;
+  border-color: #f8f9fb;
+  color: #1f2c39;
+}
+.recorder-card > .recorder-controls .secondary:hover,
+.recorder-card:has(> .recording-badge) > .audio-review .secondary:hover {
+  background: #f8f9fbe6;
+  border-color: #f8f9fbe6;
+}
+.recorder-card > .recorder-controls :is(.primary, .danger),
+.recorder-card:has(> .recording-badge) > .audio-review .primary {
+  background: #d85736;
+  border-color: #d85736;
+  color: #f8f9fb;
+}
+.recorder-card > .recorder-controls :is(.primary, .danger):hover,
+.recorder-card:has(> .recording-badge) > .audio-review .primary:hover {
+  background: #d85736;
+  box-shadow: inset 0 0 0 100px #1f2c3926;
+}
+.recorder-card:has(> .recording-badge) > .notice {
+  color: #1f2c39;
+}
+@keyframes recorder-brand-orbit {
+  50% {
+    box-shadow: 0 0 0 8px #d8573614;
+  }
+}
